@@ -1,0 +1,109 @@
+name: Deploy DreamHost
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-dreamhost-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      REMOTE_APP_ROOT: /home/dh_nacbxf/clock.damjanski.com
+      SITE_URL: https://clock.damjanski.com
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build
+
+      - name: Package DreamHost bundle
+        run: npm run package:dreamhost
+
+      - name: Configure SSH
+        env:
+          DREAMHOST_HOST: ${{ secrets.DREAMHOST_HOST }}
+          DREAMHOST_SSH_KEY: ${{ secrets.DREAMHOST_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DREAMHOST_SSH_KEY" > ~/.ssh/dreamhost
+          chmod 600 ~/.ssh/dreamhost
+          ssh-keyscan -H "$DREAMHOST_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload standalone app
+        env:
+          DREAMHOST_HOST: ${{ secrets.DREAMHOST_HOST }}
+          DREAMHOST_USER: ${{ secrets.DREAMHOST_USER }}
+        run: |
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/dreamhost" \
+            deploy/dreamhost/ \
+            "${DREAMHOST_USER}@${DREAMHOST_HOST}:${REMOTE_APP_ROOT}/"
+
+      - name: Write environment and Passenger config
+        env:
+          DREAMHOST_HOST: ${{ secrets.DREAMHOST_HOST }}
+          DREAMHOST_USER: ${{ secrets.DREAMHOST_USER }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          ssh -i ~/.ssh/dreamhost "${DREAMHOST_USER}@${DREAMHOST_HOST}" <<EOF
+          set -eu
+          cd "${REMOTE_APP_ROOT}"
+          cat > .htaccess <<'HTACCESS'
+          PassengerAppRoot /home/dh_nacbxf/clock.damjanski.com
+          PassengerBaseURI /
+          PassengerAppType node
+          PassengerStartupFile server.js
+          PassengerNodejs /usr/bin/env node
+          HTACCESS
+          cat > .env.local <<ENVFILE
+          OPENAI_API_KEY=${OPENAI_API_KEY}
+          OPENAI_IMAGE_MODEL=gpt-image-1.5
+          OPENAI_IMAGE_QUALITY=medium
+          OPENAI_IMAGE_SIZE=1024x1024
+          ENVFILE
+          chmod 600 .env.local
+          mkdir -p tmp
+          date +"restart %Y-%m-%dT%H:%M:%S%z" > tmp/restart.txt
+          EOF
+
+      - name: Verify deployment
+        run: |
+          for url in \
+            "${SITE_URL}/" \
+            "${SITE_URL}/opengraph-image" \
+            "${SITE_URL}/twitter-image"
+          do
+            success=0
+            for attempt in 1 2 3 4 5 6 7 8 9 10
+            do
+              if curl --fail --silent --show-error --location "$url" > /tmp/verify.out; then
+                success=1
+                break
+              fi
+              sleep 6
+            done
+            if [ "$success" -ne 1 ]; then
+              echo "Verification failed for $url"
+              exit 1
+            fi
+          done

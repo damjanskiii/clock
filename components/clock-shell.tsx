@@ -1,0 +1,88 @@
+"use client";
+
+import type { ClockVariantId } from "@/lib/clock-variants";
+import styles from "@/components/clock-shell.module.css";
+
+type ClockShellProps = {
+  displayTime: string;
+  errorText: string | null;
+  imageAlt: string;
+  imageUrl: string | null;
+  isGenerating: boolean;
+  isModalOpen: boolean;
+  questionMarkColor: string;
+  statusText: string;
+  variant: ClockVariantId;
+  variantCopy: string;
+  onCloseModal: () => void;
+  onOpenModal: () => void;
+};
+
+export function ClockShell({
+  displayTime,
+  errorText,
+  imageAlt,
+  imageUrl,
+  isGenerating,
+  isModalOpen,
+  questionMarkColor,
+  statusText,
+  variant,
+  variantCopy,
+  onCloseModal,
+  onOpenModal,
+}: ClockShellProps) {
+  return (
+    <main className={styles.page} data-variant={variant}>
+      <button
+        aria-label="About this clock"
+        className={styles.helpButton}
+        style={{ color: questionMarkColor }}
+        type="button"
+        onClick={onOpenModal}
+      >
+        ?
+      </button>
+
+      <section className={styles.centerStage} aria-live="polite">
+        <div className={styles.clockFrame}>
+          {imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img alt={imageAlt} className={styles.clockImage} src={imageUrl} />
+          ) : (
+            <div className={styles.placeholder}>
+              <span className={styles.placeholderTime}>{displayTime}</span>
+            </div>
+          )}
+        </div>
+
+        {(isGenerating || errorText) && (
+          <p className={styles.statusText}>
+            {errorText ?? statusText}
+          </p>
+        )}
+      </section>
+
+      {isModalOpen && (
+        <div
+          aria-modal="true"
+          className={styles.modalOverlay}
+          role="dialog"
+          onClick={onCloseModal}
+        >
+          <div className={styles.modalCard} onClick={(event) => event.stopPropagation()}>
+            <button
+              aria-label="Close information popup"
+              className={styles.closeButton}
+              type="button"
+              onClick={onCloseModal}
+            >
+              Close
+            </button>
+            <p className={styles.modalCopy}>{variantCopy}</p>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}

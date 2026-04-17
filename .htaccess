@@ -1,0 +1,5 @@
+PassengerAppRoot /home/dh_nacbxf/clock.damjanski.com
+PassengerBaseURI /
+PassengerAppType node
+PassengerStartupFile server.js
+PassengerNodejs /usr/bin/env node
