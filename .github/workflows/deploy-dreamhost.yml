@@ -49,8 +49,22 @@ jobs:
           set -eu
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s\n' "$DREAMHOST_SSH_KEY" | tr -d '\r' > ~/.ssh/dreamhost
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          key = os.environ["DREAMHOST_SSH_KEY"].strip()
+
+          if len(key) >= 2 and key[0] == key[-1] and key[0] in ("'", '"'):
+            key = key[1:-1]
+
+          key = key.replace("\r", "").replace("\\n", "\n")
+
+          path = Path.home() / ".ssh" / "dreamhost"
+          path.write_text(key if key.endswith("\n") else key + "\n")
+          PY
           chmod 600 ~/.ssh/dreamhost
+          ssh-keygen -y -f ~/.ssh/dreamhost > /dev/null
           cat > ~/.ssh/config <<'SSHCONFIG'
           Host dreamhost
             HostName iad1-shared-b8-40.dreamhost.com
