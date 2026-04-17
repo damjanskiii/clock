@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      DREAMHOST_HOST: iad1-shared-b8-40.dreamhost.com
+      DREAMHOST_USER: dh_nacbxf
       REMOTE_APP_ROOT: /home/dh_nacbxf/clock.damjanski.com
       SITE_URL: https://clock.damjanski.com
 
@@ -42,32 +44,43 @@ jobs:
 
       - name: Configure SSH
         env:
-          DREAMHOST_HOST: ${{ secrets.DREAMHOST_HOST }}
           DREAMHOST_SSH_KEY: ${{ secrets.DREAMHOST_SSH_KEY }}
         run: |
+          set -eu
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s\n' "$DREAMHOST_SSH_KEY" > ~/.ssh/dreamhost
+          printf '%s\n' "$DREAMHOST_SSH_KEY" | tr -d '\r' > ~/.ssh/dreamhost
           chmod 600 ~/.ssh/dreamhost
+          cat > ~/.ssh/config <<'SSHCONFIG'
+          Host dreamhost
+            HostName iad1-shared-b8-40.dreamhost.com
+            User dh_nacbxf
+            IdentityFile ~/.ssh/dreamhost
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+          SSHCONFIG
+          chmod 600 ~/.ssh/config
           ssh-keyscan -H "$DREAMHOST_HOST" >> ~/.ssh/known_hosts
+          ssh dreamhost "mkdir -p '${REMOTE_APP_ROOT}'"
 
       - name: Upload standalone app
-        env:
-          DREAMHOST_HOST: ${{ secrets.DREAMHOST_HOST }}
-          DREAMHOST_USER: ${{ secrets.DREAMHOST_USER }}
         run: |
+          set -eu
           rsync -az --delete \
-            -e "ssh -i ~/.ssh/dreamhost" \
+            --exclude=".env.local" \
+            --exclude=".env" \
+            --exclude="tmp/" \
+            --exclude=".dh-diag" \
             deploy/dreamhost/ \
-            "${DREAMHOST_USER}@${DREAMHOST_HOST}:${REMOTE_APP_ROOT}/"
+            "dreamhost:${REMOTE_APP_ROOT}/"
 
       - name: Write environment and Passenger config
         env:
-          DREAMHOST_HOST: ${{ secrets.DREAMHOST_HOST }}
-          DREAMHOST_USER: ${{ secrets.DREAMHOST_USER }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          ssh -i ~/.ssh/dreamhost "${DREAMHOST_USER}@${DREAMHOST_HOST}" <<EOF
+          ssh dreamhost <<EOF
+          set -eu
           cd "${REMOTE_APP_ROOT}"
 
           cat > .htaccess <<'HTACCESS'
