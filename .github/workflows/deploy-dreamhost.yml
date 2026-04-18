@@ -42,6 +42,14 @@ jobs:
       - name: Package DreamHost bundle
         run: npm run package:dreamhost
 
+      - name: Bundle Node runtime for DreamHost
+        run: |
+          set -eu
+          NODE_ROOT="$(dirname "$(dirname "$(command -v node)")")"
+          mkdir -p deploy/dreamhost/.node-runtime
+          rsync -a "${NODE_ROOT}/" deploy/dreamhost/.node-runtime/
+          chmod 755 deploy/dreamhost/.node-runtime/bin/node
+
       - name: Configure SSH
         env:
           DREAMHOST_SSH_KEY: ${{ secrets.DREAMHOST_SSH_KEY }}
@@ -102,7 +110,7 @@ jobs:
           PassengerBaseURI /
           PassengerAppType node
           PassengerStartupFile server.js
-          PassengerNodejs /usr/bin/env node
+          PassengerNodejs /home/dh_nacbxf/clock.damjanski.com/.node-runtime/bin/node
           HTACCESS
 
           cat > .env.local <<ENVFILE

@@ -34,15 +34,16 @@ Build `clock.damjanski.com` as a production-ready web app that continuously show
 - Added GitHub Actions deployment scaffolding for DreamHost shared hosting via Passenger.
 - Verified the DreamHost Passenger deployment bundle shape: root `server.js`, `server.standalone.js`, `.next/`, `node_modules/`, `.htaccess`, and server-only `.env.local`.
 - Verified the DreamHost server has the `dreamhost-github-actions` public key installed in `~/.ssh/authorized_keys`.
+- Verified the DreamHost shared-hosting system Node is only `v12.22.9`, which is too old for Next.js 16.
+- Updated the GitHub Actions deployment approach to bundle a modern Node runtime with the app and point Passenger at that bundled binary.
 - Successfully smoke-tested a live OpenAI image generation request locally with a real API key; `/api/clock` returned a valid `1024x1024` PNG.
 - Verified `npm run lint` and `npm run build`.
 
 ## In progress
 - Finalizing GitHub Actions auto-deploy to DreamHost shared hosting.
-- Current blocker: repository secret `DREAMHOST_SSH_KEY` is still being interpreted by GitHub Actions as a passphrase-protected private key, so the SSH setup step exits before deploy.
+- Current focus: redeploy after switching Passenger away from DreamHost's outdated system Node runtime.
 
 ## Left to do
-- Replace the GitHub repository secret `DREAMHOST_SSH_KEY` with the unencrypted private key from `~/.ssh/dreamhost_github_actions`.
 - Re-run the GitHub Actions deploy and confirm the site, `/opengraph-image`, and `/twitter-image` load on production.
 - Implement V2 viewport-aware generation and fullscreen loading flow.
 
@@ -54,6 +55,7 @@ Build `clock.damjanski.com` as a production-ready web app that continuously show
 - The official OpenAI docs currently describe `gpt-image-1.5` as the latest and most advanced image generation model.
 - OpenAI may require API Organization Verification before GPT Image usage.
 - DreamHost startup uses Passenger with root `server.js`, which loads `.env.local` via a tiny built-in fs loader and then starts `server.standalone.js`.
+- GitHub Actions now needs to bundle a Linux Node runtime into `deploy/dreamhost/.node-runtime` because DreamHost's system Node is too old for the app.
 - Local standalone runs can load `.env.local`; GitHub Actions writes `.env.local` on the DreamHost host from repository secrets.
 - DreamHost upload bundle target: `deploy/dreamhost/`
 - GitHub Actions workflow target: `.github/workflows/deploy-dreamhost.yml`
@@ -80,7 +82,8 @@ Build `clock.damjanski.com` as a production-ready web app that continuously show
 - Costs scale with continuous image generation; the prefetch window must stay conservative.
 - The app is EST-only by product direction, but implementation uses the canonical `America/New_York` timezone identifier.
 - Social metadata intentionally uses the provided share copy spelling: `The DamjaskiOS Clock`.
-- Current GitHub Actions failure mode is specific: `ssh-keygen -y -f ~/.ssh/dreamhost` prompts for a passphrase, which means the secret currently stored in `DREAMHOST_SSH_KEY` is not the intended unencrypted deploy key.
+- The SSH secret issue was resolved by replacing `DREAMHOST_SSH_KEY` with the unencrypted private key from `~/.ssh/dreamhost_github_actions`.
+- DreamHost shared hosting currently exposes `/usr/bin/node` as `v12.22.9`, so Passenger must be pointed at a bundled modern Node runtime for this app to boot.
 
 ## Recommended next steps
 - Set the production environment variables and test real minute turnover.
