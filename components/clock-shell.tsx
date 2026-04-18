@@ -4,7 +4,6 @@ import type { ClockVariantId } from "@/lib/clock-variants";
 import styles from "@/components/clock-shell.module.css";
 
 type ClockShellProps = {
-  displayTime: string;
   errorText: string | null;
   imageAlt: string;
   imageUrl: string | null;
@@ -19,7 +18,6 @@ type ClockShellProps = {
 };
 
 export function ClockShell({
-  displayTime,
   errorText,
   imageAlt,
   imageUrl,
@@ -50,14 +48,15 @@ export function ClockShell({
             // eslint-disable-next-line @next/next/no-img-element
             <img alt={imageAlt} className={styles.clockImage} src={imageUrl} />
           ) : (
-            <div className={styles.placeholder}>
-              <span className={styles.placeholderTime}>{displayTime}</span>
-            </div>
+            <div aria-hidden="true" className={styles.placeholder} />
           )}
 
           {isGenerating && !imageUrl && (
             <div className={styles.loadingOverlay}>
-              <span className={styles.loadingCopy}>Loading your clock...</span>
+              <span className={styles.loadingCopy}>
+                Loading the Clock
+                <span aria-hidden="true" className={styles.loadingDots} />
+              </span>
             </div>
           )}
         </div>

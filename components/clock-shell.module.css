@@ -36,12 +36,6 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.placeholderTime {
-  color: rgba(255, 255, 255, 0.35);
-  font-size: clamp(2rem, 10vw, 4.5rem);
-  letter-spacing: 0.08em;
-}
-
 .statusText {
   margin: 18px 0 0;
   color: rgba(255, 255, 255, 0.52);
@@ -63,6 +57,28 @@
   color: rgba(255, 255, 255, 0.78);
   font-size: 0.95rem;
   letter-spacing: 0.02em;
+  min-width: 11rem;
+  text-align: center;
+}
+
+.loadingDots::after {
+  content: "...";
+  animation: loadingDots 1.2s step-end infinite;
+}
+
+@keyframes loadingDots {
+  0%,
+  100% {
+    content: "...";
+  }
+
+  33% {
+    content: "..";
+  }
+
+  66% {
+    content: ".";
+  }
 }
 
 .helpButton {

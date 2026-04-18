@@ -53,7 +53,8 @@ Build `clock.damjanski.com` as a production-ready web app that shows the current
 - Reworked the live client loop so the page auto-updates without reload and pre-generates the next 2 minute-images for active visitors.
 - Switched the clock prompt to the new hyperrealistic edge-to-edge clock prompt.
 - Switched visitor-facing time logic from fixed `America/New_York` to the visitor's exact local time.
-- Added a dedicated `Loading your clock...` first-load state.
+- Added a dedicated loading-state treatment for first load and polished the loading copy/animation.
+- Tightened active-visitor minute handoff so the next 2 minute-images can start warming earlier and in parallel when a boundary is close, improving exact-on-the-minute swaps.
 - Added an estimated `$20` daily generation limit with a visitor-facing fallback message.
 - Verified the moving alias `chatgpt-image-latest` works with the OpenAI Images API and local production env.
 

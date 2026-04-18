@@ -21,6 +21,7 @@ type ClockAppProps = {
 };
 
 const DAILY_LIMIT_MESSAGE = "Too many people apparently don't know how late it is and are visiting this site. Hold your horses - the daily token limit has been reached. Come back tomorrow.";
+const URGENT_PREFETCH_LEAD_MS = 25_000;
 
 function buildClockRequestUrl(target: ClockTarget) {
   const params = new URLSearchParams({
@@ -36,7 +37,7 @@ export function ClockApp({ variant }: ClockAppProps) {
   const variantConfig = clockVariants[variant];
   const [displayTime, setDisplayTime] = useState(() => getClockSnapshot().displayTime);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [statusText, setStatusText] = useState<string>("Loading your clock...");
+  const [statusText, setStatusText] = useState<string>("Loading the Clock...");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(true);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -165,7 +166,7 @@ export function ClockApp({ variant }: ClockAppProps) {
       }
 
       setIsGenerating(true);
-      setStatusText(currentObjectUrlRef.current ? `Updating your clock to ${snapshot.displayTime}...` : "Loading your clock...");
+      setStatusText(currentObjectUrlRef.current ? `Updating your clock to ${snapshot.displayTime}...` : "Loading the Clock...");
 
       try {
         const result = await requestClockImage(snapshot);
@@ -185,7 +186,7 @@ export function ClockApp({ variant }: ClockAppProps) {
 
         setErrorText(message);
         setIsGenerating(false);
-        setStatusText(message === DAILY_LIMIT_MESSAGE ? "" : "Loading your clock...");
+        setStatusText(message === DAILY_LIMIT_MESSAGE ? "" : "Loading the Clock...");
       }
     };
 
@@ -193,43 +194,59 @@ export function ClockApp({ variant }: ClockAppProps) {
       const futureTargets = getFutureClockTargets(CLOCK_PREFETCH_MINUTES_AHEAD);
       prunePrefetchedMinutes();
 
-      for (const futureTarget of futureTargets) {
+      const targetsToPrefetch = futureTargets.filter((futureTarget) => {
         if (budgetExceededRef.current || document.visibilityState !== "visible") {
-          return;
+          return false;
         }
 
-        if (futureTarget.cacheKey === currentTargetRef.current?.cacheKey || prefetchedStore.has(futureTarget.cacheKey)) {
-          continue;
+        if (futureTarget.cacheKey === currentTargetRef.current?.cacheKey) {
+          return false;
         }
 
-        try {
-          const prefetched = await requestClockImage(futureTarget);
+        return !prefetchedStore.has(futureTarget.cacheKey);
+      });
 
-          if (cancelled) {
-            revokeFetchResult(prefetched);
-            return;
+      await Promise.allSettled(
+        targetsToPrefetch.map(async (futureTarget) => {
+          try {
+            const prefetched = await requestClockImage(futureTarget);
+
+            if (cancelled) {
+              revokeFetchResult(prefetched);
+              return;
+            }
+
+            if (!getRetainedTargetKeys().includes(futureTarget.cacheKey)) {
+              revokeFetchResult(prefetched);
+              return;
+            }
+
+            prefetchedStore.set(futureTarget.cacheKey, prefetched);
+            prunePrefetchedMinutes();
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "Clock prefetch failed.";
+
+            if (message === DAILY_LIMIT_MESSAGE) {
+              budgetExceededRef.current = true;
+              setErrorText(message);
+              setIsGenerating(false);
+              return;
+            }
+
+            console.error("Clock prefetch failed", error);
           }
+        }),
+      );
+    };
 
-          if (!getRetainedTargetKeys().includes(futureTarget.cacheKey)) {
-            revokeFetchResult(prefetched);
-            continue;
-          }
-
-          prefetchedStore.set(futureTarget.cacheKey, prefetched);
-          prunePrefetchedMinutes();
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "Clock prefetch failed.";
-
-          if (message === DAILY_LIMIT_MESSAGE) {
-            budgetExceededRef.current = true;
-            setErrorText(message);
-            setIsGenerating(false);
-            return;
-          }
-
-          console.error("Clock prefetch failed", error);
-        }
+    const primeUpcomingMinutes = () => {
+      if (prefetchTaskRef.current || budgetExceededRef.current || document.visibilityState !== "visible") {
+        return;
       }
+
+      prefetchTaskRef.current = prefetchUpcomingMinutes().finally(() => {
+        prefetchTaskRef.current = null;
+      });
     };
 
     const scheduleMinuteLoop = async () => {
@@ -248,21 +265,22 @@ export function ClockApp({ variant }: ClockAppProps) {
 
       clearScheduledTimeouts();
       prunePrefetchedMinutes();
+
+      if (currentObjectUrlRef.current || snapshot.msUntilNextMinute <= URGENT_PREFETCH_LEAD_MS) {
+        primeUpcomingMinutes();
+      }
+
       await ensureCurrentMinute(snapshot);
 
       if (cancelled || budgetExceededRef.current || document.visibilityState !== "visible") {
         return;
       }
 
-      if (!prefetchTaskRef.current) {
-        prefetchTaskRef.current = prefetchUpcomingMinutes().finally(() => {
-          prefetchTaskRef.current = null;
-        });
-      }
+      primeUpcomingMinutes();
 
       boundaryTimerRef.current = window.setTimeout(() => {
         void scheduleMinuteLoop();
-      }, snapshot.msUntilNextMinute + 40);
+      }, snapshot.msUntilNextMinute);
     };
 
     titleTimerRef.current = window.setInterval(() => {
@@ -304,7 +322,6 @@ export function ClockApp({ variant }: ClockAppProps) {
 
   return (
     <ClockShell
-      displayTime={displayTime}
       errorText={errorText}
       imageAlt={`AI-generated clock showing ${displayTime} in your local time`}
       imageUrl={imageUrl}
