@@ -1,18 +1,28 @@
 # DamjanskiOS Clock
 
-DamjanskiOS Clock is a minimal Next.js web project for `clock.damjanski.com` that continuously shows the current `America/New_York` time as a freshly AI-generated clock image.
+DamjanskiOS Clock is a minimal Next.js site for `clock.damjanski.com` that generates a fresh AI clock image for the exact local time of each active visitor.
 
-## How V1 works
+## How V1 works now
 
 - The homepage is a black fullscreen canvas with a centered square clock image.
-- The server generates a fresh image for each absolute `America/New_York` minute.
-- The client updates the browser tab title to the current `HH:MM` time and prefetches the next minute's image shortly before the boundary.
-- If the next image is late, the app keeps the previous image visible instead of showing a broken state.
-- A small grey `?` in the top-right opens the V1 popup copy.
+- The browser tab title always shows the visitor's current local `HH:MM` time and updates every minute.
+- The site only generates clocks while someone is actively visiting.
+- On first load, the site shows `Loading your clock...` while the current image is generated.
+- Once the current image is visible, the client prefetches up to 2 upcoming minute-images for that visitor so the correct image is ready on the boundary whenever possible.
+- The app auto-updates on the page without requiring a reload.
+- A small grey `?` in the top-right opens the current V1 popup copy.
+
+## Current prompt template
+
+```text
+Create a hyperrealistic clock showing {time}. Do not show seconds. The clock must occupy the full {format} image edge-to-edge with no visible background. The bezel, dial, and overall case must match the {format}. Style: random classic real-world clock style. Use authentic materials and construction. Not illustration, not comic, not stylized graphic art. Hands and numerals must match the style and vary each time. Format: {format}.
+```
+
+Current format for V1: `square`
 
 ## OpenAI configuration
 
-V1 uses the current GPT Image family model through the OpenAI API. The default model is `gpt-image-1.5`, which the official OpenAI docs currently describe as the latest and most advanced image generation model.
+The app uses the OpenAI Images API server-side only. The default model is `chatgpt-image-latest`, which tracks the image snapshot currently used in ChatGPT and automatically follows future upgrades without code changes.
 
 Required environment variable:
 
@@ -20,11 +30,26 @@ Required environment variable:
 
 Optional overrides:
 
-- `OPENAI_IMAGE_MODEL`
 - `OPENAI_IMAGE_QUALITY`
 - `OPENAI_IMAGE_SIZE`
+- `CLOCK_DAILY_BUDGET_USD`
+- `CLOCK_ESTIMATED_IMAGE_COST_USD`
+- `CLOCK_BUDGET_TIME_ZONE`
 
 Copy `.env.example` to `.env.local` and fill in your API key.
+
+## Budget guard
+
+- The app stops generating new images after the estimated daily spend crosses the configured cap.
+- Default cap: `$20` per day.
+- Default estimated cost per image: `$0.034` for a medium `1024x1024` image.
+- On Vercel, the budget counter uses Runtime Cache in the app's home region, with an in-memory fallback if that cache is unavailable.
+
+When the cap is reached, visitors see:
+
+```text
+Too many people apparently don't know how late it is and are visiting this site. Hold your horses - the daily token limit has been reached. Come back tomorrow.
+```
 
 ## Local development
 
@@ -37,30 +62,19 @@ Then open [http://localhost:3000](http://localhost:3000).
 
 ## Production deployment
 
-This app is ready for a standard Next.js Node deployment.
+### Vercel
 
-Typical flow:
+- Import the repo as a normal Next.js project.
+- Add the environment variables in Vercel.
+- Deploy normally.
 
-```bash
-npm run build
-npm run start
-```
+### DreamHost
 
-For Vercel:
-
-- import the repo
-- set the environment variables
-- deploy as a normal Next.js project
-
-For DreamHost:
-
-- build the app with `npm run build`
-- package the upload bundle with `npm run package:dreamhost`
-- run it as a Node app with `npm run start`
-- the project is configured with `output: "standalone"` to make self-hosted deployment simpler
+- Build the app with `npm run build`
+- Package the upload bundle with `npm run package:dreamhost`
+- Run it as a Node app with `npm run start`
+- The project keeps `output: "standalone"` to support self-hosted deployment
 - `npm run start` launches the standalone Next.js server from `.next/standalone/server.js` and loads `.env.local` when present
-- point `clock.damjanski.com` at the running Node process through your DreamHost app setup or reverse proxy
-- for production on DreamHost, prefer setting the same variables in the app environment as well
 
 Files to upload for DreamHost:
 
@@ -70,9 +84,9 @@ Files to upload for DreamHost:
 
 Secret handling:
 
-- keep `OPENAI_API_KEY` only in DreamHost server-side environment configuration
-- never place the API key in any uploaded file, client-side code, database row, or public directory
-- rotate any key that has ever been pasted into chat or shared outside your password manager
+- keep `OPENAI_API_KEY` only in server-side environment configuration
+- never place the API key in uploaded source, public assets, client-side code, or a public database row
+- rotate any key that has ever been pasted into chat or stored outside your password manager
 
 ### GitHub Actions auto-deploy
 
@@ -85,17 +99,6 @@ Add these repository secrets in GitHub before enabling the workflow:
 - `DREAMHOST_SSH_KEY`
 - `OPENAI_API_KEY`
 
-What the workflow does:
-
-- runs `npm ci`
-- runs `npm run build`
-- runs `npm run package:dreamhost`
-- uploads `deploy/dreamhost/` to DreamHost
-- rewrites `.htaccess`
-- writes `.env.local` from GitHub secrets
-- restarts Passenger by updating `tmp/restart.txt`
-- verifies `/`, `/opengraph-image`, and `/twitter-image`
-
 ## Social sharing
 
 - Share title: `WHAT:TIME:IS:IT`
@@ -105,10 +108,11 @@ What the workflow does:
 
 ## Architecture summary
 
-- `app/api/clock/route.ts` serves minute-specific images and forces dynamic Node execution.
+- `app/api/clock/route.ts` validates visitor-local time requests and serves dynamic clock images.
 - `lib/server/clock-image-service.ts` handles OpenAI generation plus short-lived rolling cache and in-flight deduping.
-- `lib/clock-time.ts` centralizes `America/New_York` time handling and minute-boundary scheduling helpers.
-- `components/clock-app.tsx` owns client-side fetching, tab title updates, and prefetch timing.
+- `lib/server/daily-image-budget.ts` tracks the estimated daily image budget.
+- `lib/clock-time.ts` centralizes local-minute scheduling helpers and the 2-minute prefetch window.
+- `components/clock-app.tsx` owns the client fetch loop, title updates, loading state, and auto-refresh behavior.
 
 ## V2 direction
 
@@ -117,4 +121,4 @@ V2 is intentionally not fully implemented yet, but the codebase is prepared for 
 - shared time utilities
 - configurable prompt generation
 - variant config for different popup copy and question-mark styling
-- TODO markers for viewport-based generation, fullscreen layout, and loading overlays
+- TODO markers for viewport-based generation, fullscreen layout, and dedicated loading overlays

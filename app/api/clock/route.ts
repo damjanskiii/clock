@@ -1,26 +1,52 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClockSnapshot, isRequestableMinuteKey, isValidMinuteKey } from "@/lib/clock-time";
+import { CLOCK_DAILY_LIMIT_MESSAGE } from "@/lib/clock-config";
+import type { ClockRequestFormat } from "@/lib/clock-time";
+import { isRequestableRequestMinuteKey, isValidDisplayTime, isValidRequestMinuteKey } from "@/lib/clock-time";
+import { DailyClockBudgetExceededError } from "@/lib/server/daily-image-budget";
 import { getMinuteImage } from "@/lib/server/clock-image-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const maxDuration = 60;
+export const preferredRegion = "home";
 
 export async function GET(request: NextRequest) {
-  const requestedMinute = request.nextUrl.searchParams.get("minute");
-  const minuteKey = requestedMinute ?? getClockSnapshot().minuteKey;
+  const displayTime = request.nextUrl.searchParams.get("time");
+  const requestMinuteKey = request.nextUrl.searchParams.get("requestMinute");
+  const format = (request.nextUrl.searchParams.get("format") ?? "square") as ClockRequestFormat;
 
-  if (!isValidMinuteKey(minuteKey)) {
+  if (!displayTime || !requestMinuteKey) {
     return NextResponse.json(
-      { error: "Invalid minute format. Expected YYYY-MM-DDTHH:mm." },
+      { error: "Missing clock request parameters." },
       { status: 400 },
     );
   }
 
-  if (!isRequestableMinuteKey(minuteKey)) {
+  if (!isValidDisplayTime(displayTime)) {
     return NextResponse.json(
-      { error: "Only the current New York minute and its immediate rollover window are available." },
+      { error: "Invalid time format. Expected HH:MM." },
+      { status: 400 },
+    );
+  }
+
+  if (!isValidRequestMinuteKey(requestMinuteKey)) {
+    return NextResponse.json(
+      { error: "Invalid request minute format. Expected YYYY-MM-DDTHH:mmZ." },
+      { status: 400 },
+    );
+  }
+
+  if (format !== "square") {
+    return NextResponse.json(
+      { error: "Unsupported clock format." },
+      { status: 400 },
+    );
+  }
+
+  if (!isRequestableRequestMinuteKey(requestMinuteKey)) {
+    return NextResponse.json(
+      { error: "Only the current minute and the active visitor prefetch window are available." },
       {
         status: 400,
         headers: {
@@ -31,7 +57,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const image = await getMinuteImage(minuteKey);
+    const image = await getMinuteImage({
+      displayTime,
+      format,
+      requestMinuteKey,
+    });
     const body = new Uint8Array(image.buffer.byteLength);
     body.set(image.buffer);
 
@@ -41,15 +71,31 @@ export async function GET(request: NextRequest) {
         "Cache-Control": "no-store, max-age=0",
         "Content-Length": String(image.buffer.byteLength),
         "Content-Type": image.mimeType,
-        "X-Clock-Minute": image.minuteKey,
+        "X-Clock-Minute": image.requestMinuteKey,
+        "X-Clock-Model": image.model,
         "X-Clock-Time": image.displayTime,
         "X-Clock-Generated-At": image.generatedAt,
       },
     });
   } catch (error) {
+    if (error instanceof DailyClockBudgetExceededError) {
+      return NextResponse.json(
+        {
+          error: CLOCK_DAILY_LIMIT_MESSAGE,
+        },
+        {
+          status: 429,
+          headers: {
+            "Cache-Control": "no-store, max-age=0",
+          },
+        },
+      );
+    }
+
     console.error("Clock image generation failed", {
       error: error instanceof Error ? error.message : error,
-      minuteKey,
+      displayTime,
+      requestMinuteKey,
     });
 
     return NextResponse.json(

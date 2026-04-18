@@ -3,22 +3,36 @@ import {
   DEFAULT_OPENAI_IMAGE_QUALITY,
   DEFAULT_OPENAI_IMAGE_SIZE,
 } from "@/lib/clock-config";
+import {
+  DailyClockBudgetExceededError,
+  releaseDailyImageBudget,
+  reserveDailyImageBudget,
+} from "@/lib/server/daily-image-budget";
 import { buildClockPrompt } from "@/lib/clock-prompt";
 import { getOpenAIClient } from "@/lib/server/openai";
+import type { ClockRequestFormat } from "@/lib/clock-time";
 
 type CachedMinuteImage = {
   buffer: Buffer;
   displayTime: string;
+  format: ClockRequestFormat;
   generatedAt: string;
   mimeType: string;
-  minuteKey: string;
+  model: string;
+  requestMinuteKey: string;
 };
 
 const resolvedCache = new Map<string, CachedMinuteImage>();
 const pendingCache = new Map<string, Promise<CachedMinuteImage>>();
 
-function getDisplayTimeForMinute(minuteKey: string) {
-  return minuteKey.slice(11, 16);
+type MinuteImageRequest = {
+  displayTime: string;
+  format: ClockRequestFormat;
+  requestMinuteKey: string;
+};
+
+function getCacheKey({ displayTime, format, requestMinuteKey }: MinuteImageRequest) {
+  return `${requestMinuteKey}|${displayTime}|${format}`;
 }
 
 function trimCache() {
@@ -32,19 +46,29 @@ function trimCache() {
   }
 }
 
-async function generateMinuteImage(minuteKey: string): Promise<CachedMinuteImage> {
-  const displayTime = getDisplayTimeForMinute(minuteKey);
-  const prompt = buildClockPrompt(displayTime, "square");
+async function generateMinuteImage({ displayTime, format, requestMinuteKey }: MinuteImageRequest): Promise<CachedMinuteImage> {
+  const prompt = buildClockPrompt(displayTime, format);
   const openai = getOpenAIClient();
-  const response = await openai.images.generate({
-    model: DEFAULT_OPENAI_IMAGE_MODEL,
-    prompt,
-    quality: DEFAULT_OPENAI_IMAGE_QUALITY,
-    size: DEFAULT_OPENAI_IMAGE_SIZE,
-  });
+  const reservation = await reserveDailyImageBudget();
+
+  let response;
+
+  try {
+    response = await openai.images.generate({
+      model: DEFAULT_OPENAI_IMAGE_MODEL,
+      prompt,
+      quality: DEFAULT_OPENAI_IMAGE_QUALITY,
+      size: DEFAULT_OPENAI_IMAGE_SIZE,
+    });
+  } catch (error) {
+    await releaseDailyImageBudget(reservation);
+    throw error;
+  }
+
   const firstImage = response.data?.[0];
 
   if (!firstImage?.b64_json) {
+    await releaseDailyImageBudget(reservation);
     throw new Error("The OpenAI image response did not include image data.");
   }
 
@@ -53,36 +77,39 @@ async function generateMinuteImage(minuteKey: string): Promise<CachedMinuteImage
   return {
     buffer,
     displayTime,
+    format,
     generatedAt: new Date().toISOString(),
     mimeType: "image/png",
-    minuteKey,
+    model: DEFAULT_OPENAI_IMAGE_MODEL,
+    requestMinuteKey,
   };
 }
 
-export async function getMinuteImage(minuteKey: string) {
-  const cached = resolvedCache.get(minuteKey);
+export async function getMinuteImage(request: MinuteImageRequest) {
+  const cacheKey = getCacheKey(request);
+  const cached = resolvedCache.get(cacheKey);
   if (cached) {
     return cached;
   }
 
-  const pending = pendingCache.get(minuteKey);
+  const pending = pendingCache.get(cacheKey);
   if (pending) {
     return pending;
   }
 
-  const task = generateMinuteImage(minuteKey)
+  const task = generateMinuteImage(request)
     .then((image) => {
-      resolvedCache.set(minuteKey, image);
-      pendingCache.delete(minuteKey);
+      resolvedCache.set(cacheKey, image);
+      pendingCache.delete(cacheKey);
       trimCache();
       return image;
     })
     .catch((error) => {
-      pendingCache.delete(minuteKey);
+      pendingCache.delete(cacheKey);
       throw error;
     });
 
-  pendingCache.set(minuteKey, task);
+  pendingCache.set(cacheKey, task);
 
   return task;
 }

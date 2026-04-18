@@ -7,7 +7,7 @@ type ClockVariant = {
 
 export const clockVariants: Record<ClockVariantId, ClockVariant> = {
   v1: {
-    modalCopy: "This clock currently generates on EST only. A new clock is generated every minute to match the current time. More time zones coming soon.",
+    modalCopy: "A new clock is generated every minute to show the current time. The site always uses the latest image model, so its appearance and quality evolve over time - minute by minute.",
     questionMarkColor: "#7a7a7a",
   },
   v2: {

@@ -54,9 +54,15 @@ export function ClockShell({
               <span className={styles.placeholderTime}>{displayTime}</span>
             </div>
           )}
+
+          {isGenerating && !imageUrl && (
+            <div className={styles.loadingOverlay}>
+              <span className={styles.loadingCopy}>Loading your clock...</span>
+            </div>
+          )}
         </div>
 
-        {(isGenerating || errorText) && (
+        {(errorText || (isGenerating && !!imageUrl)) && (
           <p className={styles.statusText}>
             {errorText ?? statusText}
           </p>

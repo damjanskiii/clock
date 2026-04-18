@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { getClockSnapshot } from "@/lib/clock-time";
 import "./globals.css";
 
 function resolveSiteUrl() {
@@ -21,13 +20,23 @@ function resolveSiteUrl() {
   return "https://clock.damjanski.com";
 }
 
+const localTitleScript = `
+(() => {
+  const pad = (value) => String(value).padStart(2, "0");
+  const update = () => {
+    const now = new Date();
+    document.title = \`\${pad(now.getHours())}:\${pad(now.getMinutes())}\`;
+  };
+  update();
+})();
+`;
+
 export async function generateMetadata(): Promise<Metadata> {
-  const snapshot = getClockSnapshot();
   const siteUrl = resolveSiteUrl();
 
   return {
     metadataBase: new URL(siteUrl),
-    title: snapshot.displayTime,
+    title: "Loading your clock...",
     description: "The DamjaskiOS Clock",
     alternates: {
       canonical: "/",
@@ -77,6 +86,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: localTitleScript }} />
+      </head>
       <body>{children}</body>
     </html>
   );

@@ -1,23 +1,24 @@
 # DamjanskiOS Clock Handoff
 
 ## Project goal
-Build `clock.damjanski.com` as a production-ready web app that continuously shows the current `America/New_York` time as a freshly AI-generated clock image.
+Build `clock.damjanski.com` as a production-ready web app that shows the current local time of each active visitor as a freshly AI-generated clock image.
 
 ## Current product scope
-- V1 implemented: EST-only experience using a square generated clock image, minute-based regeneration, tab-title updates, centered black-background layout, and info modal.
+- V1 implemented as a visitor-local-time experience using a square generated clock image, minute-based regeneration, tab-title updates, centered black-background layout, loading state, and info modal.
 - Production metadata implemented: share title/copy, OG/Twitter image, canonical URL, and external favicon.
 - Active production target moved to Vercel for now so V1 can run on a modern Node platform immediately; DreamHost shared hosting remains documented as a blocked runtime path.
-- Current V1 behavior now pre-generates upcoming minute images up to 2 minutes ahead for active sessions, auto-swaps the displayed image without reload, keeps seconds out of prompts, and uses the updated modal copy.
+- Current V1 behavior now generates only for active visitors, pre-generates upcoming minute images up to 2 minutes ahead for active sessions, auto-swaps the displayed image without reload, keeps seconds out of prompts, uses the updated hyperrealistic prompt, and enforces an estimated $20/day generation cap.
 - V2 not implemented yet: scaffold only for viewport-aware generation, fullscreen mode, and explicit loading states.
 
 ## Architecture decisions
 - Stack: Next.js App Router, TypeScript, React.
 - Image generation runs server-side through the OpenAI API.
-- V1 uses a minute-keyed rolling in-memory cache with in-flight request deduping.
-- Client computes `America/New_York` minute boundaries, updates the tab title, fetches the current minute image, and prefetches the next minute shortly before the boundary.
+- V1 uses a minute-keyed rolling in-memory image cache with in-flight request deduping.
+- Client computes the visitor's local minute boundaries, updates the tab title, fetches the current minute image, and prefetches the next 2 minutes shortly before the boundary.
 - Active sessions now keep a small rolling future buffer: after the current minute is available, the client prefetches the next 2 minute-images ahead of time so the correct image is ready at the boundary whenever possible.
 - No permanent image reuse: each absolute minute gets a fresh generation, then old minute entries are discarded from memory.
-- OpenAI model choice follows current official docs and is configurable in one place. Current default: `gpt-image-1.5`.
+- OpenAI model choice now defaults to `chatgpt-image-latest` so the site can automatically follow OpenAI's latest ChatGPT image snapshot without code edits.
+- Estimated daily spend is guarded on Vercel with Runtime Cache in the app home region, with in-memory fallback if Runtime Cache is unavailable.
 - The image route is Node runtime, dynamic, and `no-store`.
 
 ## Completed
@@ -27,7 +28,7 @@ Build `clock.damjanski.com` as a production-ready web app that continuously show
 - Created this handoff file.
 - Scaffolded a Next.js 16 / React 19 / TypeScript project.
 - Implemented V1 homepage UI, modal, and black-background centered layout.
-- Implemented shared `America/New_York` time utilities and prompt builder.
+- Implemented shared time utilities and prompt builder.
 - Implemented server-side OpenAI image generation route and rolling cache.
 - Implemented client-side minute loop, tab-title updates, and next-minute prefetch.
 - Added `README.md`, `.env.example`, and deployment-oriented package scripts.
@@ -48,16 +49,22 @@ Build `clock.damjanski.com` as a production-ready web app that continuously show
 - Corrected the Vercel production OpenAI env vars and hardened the image API route with `maxDuration`, exact-byte binary responses, and a tight requestable-minute window.
 - Updated the prompt template to explicitly avoid seconds.
 - Centered the `WHAT:TIME:IS:IT` social image text vertically and horizontally.
-- Updated the V1 popup copy to: `This clock currently generates on EST only. A new clock is generated every minute to match the current time. More time zones coming soon.`
+- Updated the V1 popup copy to the latest visitor-facing copy about minute-by-minute generation and evolving model quality.
 - Reworked the live client loop so the page auto-updates without reload and pre-generates the next 2 minute-images for active visitors.
+- Switched the clock prompt to the new hyperrealistic edge-to-edge clock prompt.
+- Switched visitor-facing time logic from fixed `America/New_York` to the visitor's exact local time.
+- Added a dedicated `Loading your clock...` first-load state.
+- Added an estimated `$20` daily generation limit with a visitor-facing fallback message.
+- Verified the moving alias `chatgpt-image-latest` works with the OpenAI Images API and local production env.
 
 ## In progress
-- Deploying the latest Vercel build that includes the new popup copy, centered share image text, explicit no-seconds prompt wording, and the 2-minute-ahead pre-generation behavior.
+- Deploying the latest Vercel build that includes visitor-local time generation, the hyperrealistic prompt, loading state, latest-model alias, and the daily budget guard.
 
 ## Left to do
 - Finish the Vercel validation pass by confirming the newest deployed frontend keeps auto-updating and that future-minute pre-generation is happening as expected in an active browser session.
 - Point `clock.damjanski.com` to the Vercel project once the live Vercel deployment is confirmed stable.
 - Decide whether DreamHost should later act only as DNS/domain management or whether a VPS/Dedicated migration is still desired.
+- Replace the estimated budget guard with exact persisted billing telemetry if exact spend enforcement becomes critical.
 - Implement V2 viewport-aware generation and fullscreen loading flow.
 
 ## Deployment notes
@@ -66,7 +73,7 @@ Build `clock.damjanski.com` as a production-ready web app that continuously show
 - DreamHost shared-host Passenger deployment remains blocked by platform/runtime constraints; use Vercel for a working Node runtime now.
 - OpenAI API key must be provided via environment variables.
 - Image route should run in the Node runtime, not Edge.
-- The official OpenAI docs currently describe `gpt-image-1.5` as the latest and most advanced image generation model.
+- The app now defaults to `chatgpt-image-latest` for automatic model upgrades, but generation quality/cost assumptions are still estimated from current official OpenAI pricing.
 - OpenAI may require API Organization Verification before GPT Image usage.
 - DreamHost startup uses Passenger with root `server.js`, which loads `.env.local` via a tiny built-in fs loader and then starts `server.standalone.js`.
 - GitHub Actions now needs to bundle a Linux Node runtime into `deploy/dreamhost/.node-runtime` because DreamHost's system Node is too old for the app.
@@ -77,9 +84,11 @@ Build `clock.damjanski.com` as a production-ready web app that continuously show
 
 ## Environment variables needed
 - `OPENAI_API_KEY`
-- `OPENAI_IMAGE_MODEL` optional override
 - `OPENAI_IMAGE_QUALITY` optional override
 - `OPENAI_IMAGE_SIZE` optional override
+- `CLOCK_DAILY_BUDGET_USD` optional override
+- `CLOCK_ESTIMATED_IMAGE_COST_USD` optional override
+- `CLOCK_BUDGET_TIME_ZONE` optional override
 
 ## Run locally
 - `npm install`
@@ -92,10 +101,10 @@ Build `clock.damjanski.com` as a production-ready web app that continuously show
 - For GitHub Actions deployment, add `DREAMHOST_HOST`, `DREAMHOST_USER`, `DREAMHOST_SSH_KEY`, and `OPENAI_API_KEY` as repository secrets.
 
 ## Known issues / caveats
-- In-memory caching is per server process, so separate instances do not share minute state.
+- The image cache is still in-memory per server process, so separate instances do not share already-generated minute images.
 - First load for a minute may briefly show a loading or previous-image fallback while generation completes.
-- Costs scale with continuous image generation; the prefetch window must stay conservative.
-- The app is EST-only by product direction, but implementation uses the canonical `America/New_York` timezone identifier.
+- Costs scale with traffic; the prefetch window stays conservative at 2 minutes and only runs while a visitor is active.
+- The daily budget guard is estimated from image-count pricing, not reconciled against exact billing exports from OpenAI.
 - Social metadata intentionally uses the provided share copy spelling: `The DamjaskiOS Clock`.
 - The SSH secret issue was resolved by replacing `DREAMHOST_SSH_KEY` with the unencrypted private key from `~/.ssh/dreamhost_github_actions`.
 - DreamHost shared hosting currently exposes `/usr/bin/node` as `v12.22.9`, so Passenger must be pointed at a bundled modern Node runtime for this app to boot.
@@ -104,12 +113,12 @@ Build `clock.damjanski.com` as a production-ready web app that continuously show
 - The temporary OpenAI key used during debugging was pasted into chat and should be rotated again after the site is stable.
 
 ## Recommended next steps
-- Recommended primary path: keep the current Next.js app and move runtime hosting to a Node-friendly environment, ideally DreamHost VPS if staying within DreamHost matters, or another managed Node host if speed matters most.
+- Recommended primary path: keep the current Next.js app on Vercel, wire the custom domain there, and only revisit DreamHost if moving to a VPS or dedicated environment.
 - Recommended fallback if DreamHost Shared is non-negotiable: pivot V1 to a static site plus a minute-based server-side generator job that writes the latest image and metadata on a schedule.
 - Not recommended except as a short experiment: spend more time on Passenger/V8 workarounds on DreamHost Shared. The evidence now points to a platform limitation rather than an app-bundle bug.
 
 ## V2 notes / scaffolding status
 - Planned seams: viewport-aware size selection, fullscreen layout mode, loading overlay, and alternate question-mark styling.
-- Shared `America/New_York` time and prompt utilities will be reused for V2.
+- Shared time and prompt utilities will be reused for V2.
 - `lib/clock-variants.ts` already contains the V2 popup copy and question-mark color.
 - `lib/server/clock-image-service.ts` has TODO markers where viewport-driven generation metadata should be added.
