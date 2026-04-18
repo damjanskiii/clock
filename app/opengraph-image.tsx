@@ -17,8 +17,7 @@ export default function OpenGraphImage() {
           color: "#fff",
           display: "flex",
           height: "100%",
-          justifyContent: "flex-start",
-          paddingTop: 72,
+          justifyContent: "center",
           width: "100%",
         }}
       >

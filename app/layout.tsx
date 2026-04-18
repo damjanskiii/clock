@@ -2,9 +2,28 @@ import type { Metadata } from "next";
 import { getClockSnapshot } from "@/lib/clock-time";
 import "./globals.css";
 
+function resolveSiteUrl() {
+  const explicitUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL;
+
+  if (explicitUrl) {
+    return explicitUrl.startsWith("http") ? explicitUrl : `https://${explicitUrl}`;
+  }
+
+  const vercelProductionUrl =
+    process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL ||
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
+    process.env.VERCEL_URL;
+
+  if (vercelProductionUrl) {
+    return `https://${vercelProductionUrl}`;
+  }
+
+  return "https://clock.damjanski.com";
+}
+
 export async function generateMetadata(): Promise<Metadata> {
   const snapshot = getClockSnapshot();
-  const siteUrl = "https://clock.damjanski.com";
+  const siteUrl = resolveSiteUrl();
 
   return {
     metadataBase: new URL(siteUrl),

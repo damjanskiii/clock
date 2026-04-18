@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClockSnapshot, isValidMinuteKey } from "@/lib/clock-time";
+import { getClockSnapshot, isRequestableMinuteKey, isValidMinuteKey } from "@/lib/clock-time";
 import { getMinuteImage } from "@/lib/server/clock-image-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   const requestedMinute = request.nextUrl.searchParams.get("minute");
@@ -17,10 +18,24 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  if (!isRequestableMinuteKey(minuteKey)) {
+    return NextResponse.json(
+      { error: "Only the current New York minute and its immediate rollover window are available." },
+      {
+        status: 400,
+        headers: {
+          "Cache-Control": "no-store, max-age=0",
+        },
+      },
+    );
+  }
+
   try {
     const image = await getMinuteImage(minuteKey);
+    const body = new Uint8Array(image.buffer.byteLength);
+    body.set(image.buffer);
 
-    return new NextResponse(new Uint8Array(image.buffer), {
+    return new Response(body.buffer, {
       status: 200,
       headers: {
         "Cache-Control": "no-store, max-age=0",
@@ -32,7 +47,10 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Clock image generation failed", error);
+    console.error("Clock image generation failed", {
+      error: error instanceof Error ? error.message : error,
+      minuteKey,
+    });
 
     return NextResponse.json(
       {

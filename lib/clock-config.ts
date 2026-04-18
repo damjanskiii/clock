@@ -6,4 +6,4 @@ export const DEFAULT_OPENAI_IMAGE_QUALITY = (
 export const DEFAULT_OPENAI_IMAGE_SIZE = (
   process.env.OPENAI_IMAGE_SIZE || "1024x1024"
 ) as "1024x1024" | "1024x1536" | "1536x1024" | "256x256" | "512x512" | "1024x1792" | "1792x1024" | "auto";
-export const CLOCK_PROMPT_TEMPLATE = "Create an image of a clock showing {time}. Format: {format}.";
+export const CLOCK_PROMPT_TEMPLATE = "Create an image of a clock showing {time}. Do not show seconds. Format: {format}.";

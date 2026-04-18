@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ClockShell } from "@/components/clock-shell";
 import { clockVariants, type ClockVariantId } from "@/lib/clock-variants";
-import { CLOCK_PREFETCH_LEAD_MS, getClockSnapshot, getNextMinuteKey, type ClockSnapshot } from "@/lib/clock-time";
+import { CLOCK_PREFETCH_MINUTES_AHEAD, getClockSnapshot, getFutureMinuteKeys, type ClockSnapshot } from "@/lib/clock-time";
 
 type FetchResult = {
   minuteKey: string;
@@ -25,13 +25,16 @@ export function ClockApp({ variant }: ClockAppProps) {
 
   const currentMinuteRef = useRef<string | null>(null);
   const currentObjectUrlRef = useRef<string | null>(null);
-  const prefetchedRef = useRef<FetchResult | null>(null);
-  const prefetchTimerRef = useRef<number | null>(null);
+  const prefetchedRef = useRef<Map<string, FetchResult>>(new Map());
+  const requestCacheRef = useRef<Map<string, Promise<FetchResult>>>(new Map());
+  const prefetchTaskRef = useRef<Promise<void> | null>(null);
   const boundaryTimerRef = useRef<number | null>(null);
   const titleTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    const prefetchedStore = prefetchedRef.current;
+    const requestCache = requestCacheRef.current;
 
     const revokeObjectUrl = (objectUrl: string | null) => {
       if (objectUrl) {
@@ -39,11 +42,26 @@ export function ClockApp({ variant }: ClockAppProps) {
       }
     };
 
-    const clearScheduledTimeouts = () => {
-      if (prefetchTimerRef.current) {
-        window.clearTimeout(prefetchTimerRef.current);
+    const revokeFetchResult = (result: FetchResult | null | undefined) => {
+      if (result) {
+        revokeObjectUrl(result.objectUrl);
       }
+    };
 
+    const getRetainedMinuteKeys = () => [getClockSnapshot().minuteKey, ...getFutureMinuteKeys(CLOCK_PREFETCH_MINUTES_AHEAD)];
+
+    const prunePrefetchedMinutes = (minuteKeys = getRetainedMinuteKeys()) => {
+      const keep = new Set(minuteKeys);
+
+      for (const [minuteKey, result] of prefetchedStore.entries()) {
+        if (!keep.has(minuteKey)) {
+          revokeFetchResult(result);
+          prefetchedStore.delete(minuteKey);
+        }
+      }
+    };
+
+    const clearScheduledTimeouts = () => {
       if (boundaryTimerRef.current) {
         window.clearTimeout(boundaryTimerRef.current);
       }
@@ -64,6 +82,20 @@ export function ClockApp({ variant }: ClockAppProps) {
       setErrorText(null);
       setIsGenerating(false);
       setStatusText("");
+    };
+
+    const requestMinuteImage = (minuteKey: string) => {
+      const cachedRequest = requestCache.get(minuteKey);
+      if (cachedRequest) {
+        return cachedRequest;
+      }
+
+      const task = fetchMinuteImage(minuteKey).finally(() => {
+        requestCache.delete(minuteKey);
+      });
+
+      requestCache.set(minuteKey, task);
+      return task;
     };
 
     const fetchMinuteImage = async (minuteKey: string): Promise<FetchResult> => {
@@ -95,9 +127,9 @@ export function ClockApp({ variant }: ClockAppProps) {
     };
 
     const ensureCurrentMinute = async (snapshot: ClockSnapshot) => {
-      if (prefetchedRef.current?.minuteKey === snapshot.minuteKey) {
-        const prefetched = prefetchedRef.current;
-        prefetchedRef.current = null;
+      const prefetched = prefetchedStore.get(snapshot.minuteKey);
+      if (prefetched) {
+        prefetchedStore.delete(snapshot.minuteKey);
         swapCurrentImage(prefetched);
         return;
       }
@@ -111,10 +143,10 @@ export function ClockApp({ variant }: ClockAppProps) {
       setStatusText(currentMinuteRef.current ? `Generating ${snapshot.displayTime}...` : "Generating current clock...");
 
       try {
-        const result = await fetchMinuteImage(snapshot.minuteKey);
+        const result = await requestMinuteImage(snapshot.minuteKey);
 
         if (cancelled) {
-          revokeObjectUrl(result.objectUrl);
+          revokeFetchResult(result);
           return;
         }
 
@@ -127,25 +159,33 @@ export function ClockApp({ variant }: ClockAppProps) {
       }
     };
 
-    const prefetchNextMinute = async () => {
-      const nextMinuteKey = getNextMinuteKey(getClockSnapshot());
+    const prefetchUpcomingMinutes = async () => {
+      const futureMinuteKeys = getFutureMinuteKeys(CLOCK_PREFETCH_MINUTES_AHEAD);
+      prunePrefetchedMinutes();
 
-      if (prefetchedRef.current?.minuteKey === nextMinuteKey) {
-        return;
-      }
-
-      try {
-        const prefetched = await fetchMinuteImage(nextMinuteKey);
-
-        if (cancelled) {
-          revokeObjectUrl(prefetched.objectUrl);
-          return;
+      for (const futureMinuteKey of futureMinuteKeys) {
+        if (futureMinuteKey === currentMinuteRef.current || prefetchedStore.has(futureMinuteKey)) {
+          continue;
         }
 
-        revokeObjectUrl(prefetchedRef.current?.objectUrl ?? null);
-        prefetchedRef.current = prefetched;
-      } catch (error) {
-        console.error("Clock prefetch failed", error);
+        try {
+          const prefetched = await requestMinuteImage(futureMinuteKey);
+
+          if (cancelled) {
+            revokeFetchResult(prefetched);
+            return;
+          }
+
+          if (!getRetainedMinuteKeys().includes(futureMinuteKey)) {
+            revokeFetchResult(prefetched);
+            continue;
+          }
+
+          prefetchedStore.set(futureMinuteKey, prefetched);
+          prunePrefetchedMinutes();
+        } catch (error) {
+          console.error("Clock prefetch failed", error);
+        }
       }
     };
 
@@ -157,17 +197,18 @@ export function ClockApp({ variant }: ClockAppProps) {
       clearScheduledTimeouts();
 
       const snapshot = updateTitle();
+      prunePrefetchedMinutes();
       await ensureCurrentMinute(snapshot);
 
       if (cancelled) {
         return;
       }
 
-      const prefetchDelay = Math.max(snapshot.msUntilNextMinute - CLOCK_PREFETCH_LEAD_MS, 0);
-
-      prefetchTimerRef.current = window.setTimeout(() => {
-        void prefetchNextMinute();
-      }, prefetchDelay);
+      if (!prefetchTaskRef.current) {
+        prefetchTaskRef.current = prefetchUpcomingMinutes().finally(() => {
+          prefetchTaskRef.current = null;
+        });
+      }
 
       boundaryTimerRef.current = window.setTimeout(() => {
         void scheduleMinuteLoop();
@@ -193,13 +234,16 @@ export function ClockApp({ variant }: ClockAppProps) {
     return () => {
       cancelled = true;
       clearScheduledTimeouts();
+      const prefetchedEntries = [...prefetchedStore.values()];
       if (titleTimerRef.current) {
         window.clearInterval(titleTimerRef.current);
       }
       window.removeEventListener("focus", handleVisibility);
       document.removeEventListener("visibilitychange", handleVisibility);
       revokeObjectUrl(currentObjectUrlRef.current);
-      revokeObjectUrl(prefetchedRef.current?.objectUrl ?? null);
+      for (const prefetched of prefetchedEntries) {
+        revokeFetchResult(prefetched);
+      }
     };
   }, []);
 
