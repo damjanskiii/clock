@@ -32,27 +32,29 @@ Build `clock.damjanski.com` as a production-ready web app that continuously show
 - Configured standalone output and start command for DreamHost-friendly Node deployment.
 - Added a DreamHost packaging script that prepares a clean upload bundle in `deploy/dreamhost`.
 - Added GitHub Actions deployment scaffolding for DreamHost shared hosting via Passenger.
+- Verified the DreamHost Passenger deployment bundle shape: root `server.js`, `server.standalone.js`, `.next/`, `node_modules/`, `.htaccess`, and server-only `.env.local`.
+- Verified the DreamHost server has the `dreamhost-github-actions` public key installed in `~/.ssh/authorized_keys`.
 - Successfully smoke-tested a live OpenAI image generation request locally with a real API key; `/api/clock` returned a valid `1024x1024` PNG.
 - Verified `npm run lint` and `npm run build`.
 
 ## In progress
-- Ready for deployment to DreamHost once the production environment variables are set on the host.
+- Finalizing GitHub Actions auto-deploy to DreamHost shared hosting.
+- Current blocker: repository secret `DREAMHOST_SSH_KEY` is still being interpreted by GitHub Actions as a passphrase-protected private key, so the SSH setup step exits before deploy.
 
 ## Left to do
-- Set `OPENAI_API_KEY` in the deployment environment.
-- Smoke-test live generation latency with a real API key.
+- Replace the GitHub repository secret `DREAMHOST_SSH_KEY` with the unencrypted private key from `~/.ssh/dreamhost_github_actions`.
+- Re-run the GitHub Actions deploy and confirm the site, `/opengraph-image`, and `/twitter-image` load on production.
 - Implement V2 viewport-aware generation and fullscreen loading flow.
-- Put the project in a real git repository and add a GitHub remote before creating branches/PRs.
 
 ## Deployment notes
 - Target deployment: `https://clock.damjanski.com/`.
-- Expected hosting: Vercel or any Node-compatible Next.js host.
+- Expected hosting: DreamHost shared hosting via Passenger using `.htaccess`.
 - OpenAI API key must be provided via environment variables.
 - Image route should run in the Node runtime, not Edge.
 - The official OpenAI docs currently describe `gpt-image-1.5` as the latest and most advanced image generation model.
 - OpenAI may require API Organization Verification before GPT Image usage.
-- Current production start command: `npm run start`, which launches `.next/standalone/server.js`.
-- Local standalone runs can load `.env.local`; hosted environments should also set the same variables directly in their app config.
+- DreamHost startup uses Passenger with root `server.js`, which loads `.env.local` via a tiny built-in fs loader and then starts `server.standalone.js`.
+- Local standalone runs can load `.env.local`; GitHub Actions writes `.env.local` on the DreamHost host from repository secrets.
 - DreamHost upload bundle target: `deploy/dreamhost/`
 - GitHub Actions workflow target: `.github/workflows/deploy-dreamhost.yml`
 
@@ -70,9 +72,6 @@ Build `clock.damjanski.com` as a production-ready web app that continuously show
 - `npm run build`
 - `npm run package:dreamhost`
 - `npm run start`
-- `npx vercel`
-- `npx vercel --prod`
-- Or deploy the repo to Vercel through the dashboard with the required environment variables set.
 - For GitHub Actions deployment, add `DREAMHOST_HOST`, `DREAMHOST_USER`, `DREAMHOST_SSH_KEY`, and `OPENAI_API_KEY` as repository secrets.
 
 ## Known issues / caveats
@@ -81,7 +80,7 @@ Build `clock.damjanski.com` as a production-ready web app that continuously show
 - Costs scale with continuous image generation; the prefetch window must stay conservative.
 - The app is EST-only by product direction, but implementation uses the canonical `America/New_York` timezone identifier.
 - Social metadata intentionally uses the provided share copy spelling: `The DamjaskiOS Clock`.
-- This working directory is not currently a git repository, so no branch or PR could be created from here.
+- Current GitHub Actions failure mode is specific: `ssh-keygen -y -f ~/.ssh/dreamhost` prompts for a passphrase, which means the secret currently stored in `DREAMHOST_SSH_KEY` is not the intended unencrypted deploy key.
 
 ## Recommended next steps
 - Set the production environment variables and test real minute turnover.
