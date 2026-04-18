@@ -134,6 +134,22 @@
   line-height: 1.5;
 }
 
+.debugReadout {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  z-index: 1;
+  margin: 0;
+  color: #000;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+
 @media (max-width: 640px) {
   .clockFrame {
     width: min(84vmin, 520px);

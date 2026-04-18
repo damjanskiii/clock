@@ -55,6 +55,9 @@ Build `clock.damjanski.com` as a production-ready web app that shows the current
 - Switched visitor-facing time logic from fixed `America/New_York` to the visitor's exact local time.
 - Added a dedicated loading-state treatment for first load and polished the loading copy/animation.
 - Tightened active-visitor minute handoff so the next 2 minute-images can start warming earlier and in parallel when a boundary is close, improving exact-on-the-minute swaps.
+- Fixed a stale-first-image race on initial load so a clock that finishes after the minute has already changed is discarded instead of flashing briefly before the correct minute.
+- Added a hidden black-on-black debug readout on the page with prompt-time metadata so the requested minute can be verified by selecting the page.
+- Added guards so prefetched image cleanup cannot revoke the blob URL of the image currently being displayed, which could otherwise cause an intermittent broken-image state until the next minute.
 - Added an estimated `$20` daily generation limit with a visitor-facing fallback message.
 - Verified the moving alias `chatgpt-image-latest` works with the OpenAI Images API and local production env.
 

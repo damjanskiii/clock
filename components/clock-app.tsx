@@ -13,6 +13,7 @@ import {
 
 type FetchResult = {
   cacheKey: string;
+  debugText: string;
   objectUrl: string;
 };
 
@@ -35,9 +36,9 @@ function buildClockRequestUrl(target: ClockTarget) {
 
 export function ClockApp({ variant }: ClockAppProps) {
   const variantConfig = clockVariants[variant];
+  const [debugText, setDebugText] = useState("");
   const [displayTime, setDisplayTime] = useState(() => getClockSnapshot().displayTime);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [statusText, setStatusText] = useState<string>("Loading the Clock...");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(true);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -64,6 +65,10 @@ export function ClockApp({ variant }: ClockAppProps) {
 
     const revokeFetchResult = (result: FetchResult | null | undefined) => {
       if (result) {
+        if (result.objectUrl === currentObjectUrlRef.current) {
+          return;
+        }
+
         revokeObjectUrl(result.objectUrl);
       }
     };
@@ -104,10 +109,10 @@ export function ClockApp({ variant }: ClockAppProps) {
       revokeObjectUrl(currentObjectUrlRef.current);
       currentObjectUrlRef.current = nextImage.objectUrl;
       currentTargetRef.current = target;
+      setDebugText(nextImage.debugText);
       setImageUrl(nextImage.objectUrl);
       setErrorText(null);
       setIsGenerating(false);
-      setStatusText("");
     };
 
     const requestClockImage = (target: ClockTarget) => {
@@ -148,6 +153,12 @@ export function ClockApp({ variant }: ClockAppProps) {
 
       return {
         cacheKey: target.cacheKey,
+        debugText: [
+          `prompt_time=${response.headers.get("X-Clock-Time") ?? target.displayTime}`,
+          `request_minute=${response.headers.get("X-Clock-Minute") ?? target.requestMinuteKey}`,
+          `generated_at=${response.headers.get("X-Clock-Generated-At") ?? "unknown"}`,
+          `model=${response.headers.get("X-Clock-Model") ?? "unknown"}`,
+        ].join(" | "),
         objectUrl: URL.createObjectURL(blob),
       };
     };
@@ -166,13 +177,20 @@ export function ClockApp({ variant }: ClockAppProps) {
       }
 
       setIsGenerating(true);
-      setStatusText(currentObjectUrlRef.current ? `Updating your clock to ${snapshot.displayTime}...` : "Loading the Clock...");
 
       try {
         const result = await requestClockImage(snapshot);
 
         if (cancelled) {
           revokeFetchResult(result);
+          return;
+        }
+
+        const latestSnapshot = getClockSnapshot();
+
+        if (latestSnapshot.requestMinuteKey !== snapshot.requestMinuteKey) {
+          revokeFetchResult(result);
+          await ensureCurrentMinute(latestSnapshot);
           return;
         }
 
@@ -186,7 +204,6 @@ export function ClockApp({ variant }: ClockAppProps) {
 
         setErrorText(message);
         setIsGenerating(false);
-        setStatusText(message === DAILY_LIMIT_MESSAGE ? "" : "Loading the Clock...");
       }
     };
 
@@ -213,6 +230,10 @@ export function ClockApp({ variant }: ClockAppProps) {
 
             if (cancelled) {
               revokeFetchResult(prefetched);
+              return;
+            }
+
+            if (futureTarget.cacheKey === currentTargetRef.current?.cacheKey) {
               return;
             }
 
@@ -322,13 +343,13 @@ export function ClockApp({ variant }: ClockAppProps) {
 
   return (
     <ClockShell
+      debugText={debugText}
       errorText={errorText}
       imageAlt={`AI-generated clock showing ${displayTime} in your local time`}
       imageUrl={imageUrl}
       isGenerating={isGenerating}
       isModalOpen={isModalOpen}
       questionMarkColor={variantConfig.questionMarkColor}
-      statusText={statusText}
       variant={variant}
       variantCopy={variantConfig.modalCopy}
       onCloseModal={() => setIsModalOpen(false)}

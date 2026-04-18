@@ -4,13 +4,13 @@ import type { ClockVariantId } from "@/lib/clock-variants";
 import styles from "@/components/clock-shell.module.css";
 
 type ClockShellProps = {
+  debugText: string;
   errorText: string | null;
   imageAlt: string;
   imageUrl: string | null;
   isGenerating: boolean;
   isModalOpen: boolean;
   questionMarkColor: string;
-  statusText: string;
   variant: ClockVariantId;
   variantCopy: string;
   onCloseModal: () => void;
@@ -18,13 +18,13 @@ type ClockShellProps = {
 };
 
 export function ClockShell({
+  debugText,
   errorText,
   imageAlt,
   imageUrl,
   isGenerating,
   isModalOpen,
   questionMarkColor,
-  statusText,
   variant,
   variantCopy,
   onCloseModal,
@@ -61,12 +61,16 @@ export function ClockShell({
           )}
         </div>
 
-        {(errorText || (isGenerating && !!imageUrl)) && (
+        {errorText && (
           <p className={styles.statusText}>
-            {errorText ?? statusText}
+            {errorText}
           </p>
         )}
       </section>
+
+      <p aria-hidden="true" className={styles.debugReadout}>
+        {debugText}
+      </p>
 
       {isModalOpen && (
         <div
