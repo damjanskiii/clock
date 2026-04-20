@@ -8,6 +8,7 @@ type ClockShellProps = {
   errorText: string | null;
   imageAlt: string;
   imageUrl: string | null;
+  isViewportFill: boolean;
   onImageError: () => void;
   isGenerating: boolean;
   isModalOpen: boolean;
@@ -23,6 +24,7 @@ export function ClockShell({
   errorText,
   imageAlt,
   imageUrl,
+  isViewportFill,
   onImageError,
   isGenerating,
   isModalOpen,
@@ -45,7 +47,7 @@ export function ClockShell({
       </button>
 
       <section className={styles.centerStage} aria-live="polite">
-        <div className={styles.clockFrame}>
+        <div className={styles.clockFrame} data-viewport-fill={isViewportFill ? "true" : "false"}>
           {imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img alt={imageAlt} className={styles.clockImage} src={imageUrl} onError={onImageError} />

@@ -10,6 +10,10 @@ import {
   type ClockSnapshot,
   type ClockTarget,
 } from "@/lib/clock-time";
+import {
+  getViewportClockSettings,
+  type ViewportClockSettings,
+} from "@/lib/viewport-clock";
 
 type FetchResult = {
   cacheKey: string;
@@ -19,6 +23,8 @@ type FetchResult = {
 
 type ClockAppProps = {
   apiPath?: string;
+  strictBoundarySwitch?: boolean;
+  useViewportSizing?: boolean;
   variant: ClockVariantId;
 };
 
@@ -26,17 +32,36 @@ const DAILY_LIMIT_MESSAGE = "Too many people apparently don't know how late it i
 const URGENT_PREFETCH_LEAD_MS = 25_000;
 const RETIRED_OBJECT_URL_BUFFER = 4;
 
-function buildClockRequestUrl(target: ClockTarget, apiPath: string) {
+function buildClockRequestUrl(
+  target: ClockTarget,
+  apiPath: string,
+  viewportSettings: ViewportClockSettings | null,
+) {
   const params = new URLSearchParams({
-    format: "square",
     requestMinute: target.requestMinuteKey,
     time: target.displayTime,
   });
 
+  if (viewportSettings) {
+    params.set("viewportWidth", String(viewportSettings.width));
+    params.set("viewportHeight", String(viewportSettings.height));
+  } else {
+    params.set("format", "square");
+  }
+
   return `${apiPath}?${params.toString()}`;
 }
 
-export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
+function getRequestScopeKey(viewportSettings: ViewportClockSettings | null) {
+  return viewportSettings?.cacheKey ?? "square";
+}
+
+export function ClockApp({
+  apiPath = "/api/clock",
+  strictBoundarySwitch = false,
+  useViewportSizing = false,
+  variant,
+}: ClockAppProps) {
   const variantConfig = clockVariants[variant];
   const [debugText, setDebugText] = useState("");
   const [displayTime, setDisplayTime] = useState(() => getClockSnapshot().displayTime);
@@ -44,6 +69,13 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(true);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [viewportSettings, setViewportSettings] = useState<ViewportClockSettings | null>(() => {
+    if (typeof window === "undefined" || !useViewportSizing) {
+      return null;
+    }
+
+    return getViewportClockSettings(window.innerWidth, window.innerHeight);
+  });
 
   const currentTargetRef = useRef<ClockTarget | null>(null);
   const currentObjectUrlRef = useRef<string | null>(null);
@@ -54,12 +86,56 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
   const boundaryTimerRef = useRef<number | null>(null);
   const titleTimerRef = useRef<number | null>(null);
   const budgetExceededRef = useRef(false);
+  const viewportCacheKey = viewportSettings?.cacheKey ?? null;
 
   useEffect(() => {
+    if (!useViewportSizing) {
+      return;
+    }
+
+    let resizeTimer: number | null = null;
+
+    const updateViewportSettings = () => {
+      setViewportSettings(
+        getViewportClockSettings(window.innerWidth, window.innerHeight),
+      );
+    };
+
+    updateViewportSettings();
+
+    const handleResize = () => {
+      if (resizeTimer) {
+        window.clearTimeout(resizeTimer);
+      }
+
+      resizeTimer = window.setTimeout(() => {
+        updateViewportSettings();
+      }, 150);
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      if (resizeTimer) {
+        window.clearTimeout(resizeTimer);
+      }
+
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [useViewportSizing]);
+
+  useEffect(() => {
+    if (useViewportSizing && !viewportSettings) {
+      return;
+    }
+
     let cancelled = false;
     const prefetchedStore = prefetchedRef.current;
     const requestCache = requestCacheRef.current;
     const retiredObjectUrls: string[] = [];
+    const scopeKey = getRequestScopeKey(viewportSettings);
+
+    const getRequestCacheKey = (target: ClockTarget) => `${target.cacheKey}|${scopeKey}`;
 
     const revokeObjectUrl = (objectUrl: string | null) => {
       if (objectUrl) {
@@ -93,8 +169,8 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
     const getRetainedTargetKeys = () => {
       const snapshot = getClockSnapshot();
       return [
-        snapshot.cacheKey,
-        ...getFutureClockTargets(CLOCK_PREFETCH_MINUTES_AHEAD).map((target) => target.cacheKey),
+        getRequestCacheKey(snapshot),
+        ...getFutureClockTargets(CLOCK_PREFETCH_MINUTES_AHEAD).map((target) => getRequestCacheKey(target)),
       ];
     };
 
@@ -136,21 +212,22 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
     };
 
     const requestClockImage = (target: ClockTarget) => {
-      const cachedRequest = requestCache.get(target.cacheKey);
+      const requestCacheKey = getRequestCacheKey(target);
+      const cachedRequest = requestCache.get(requestCacheKey);
       if (cachedRequest) {
         return cachedRequest;
       }
 
       const task = fetchClockImage(target).finally(() => {
-        requestCache.delete(target.cacheKey);
+        requestCache.delete(requestCacheKey);
       });
 
-      requestCache.set(target.cacheKey, task);
+      requestCache.set(requestCacheKey, task);
       return task;
     };
 
     const fetchClockImage = async (target: ClockTarget): Promise<FetchResult> => {
-      const response = await fetch(buildClockRequestUrl(target, apiPath), {
+      const response = await fetch(buildClockRequestUrl(target, apiPath, viewportSettings), {
         cache: "no-store",
       });
 
@@ -172,21 +249,25 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
       const blob = await response.blob();
 
       return {
-        cacheKey: target.cacheKey,
+        cacheKey: getRequestCacheKey(target),
         debugText: [
           `prompt_time=${response.headers.get("X-Clock-Time") ?? target.displayTime}`,
           `request_minute=${response.headers.get("X-Clock-Minute") ?? target.requestMinuteKey}`,
           `generated_at=${response.headers.get("X-Clock-Generated-At") ?? "unknown"}`,
           `model=${response.headers.get("X-Clock-Model") ?? "unknown"}`,
+          `prompt_format=${response.headers.get("X-Clock-Prompt-Format") ?? "unknown"}`,
+          `image_size=${response.headers.get("X-Clock-Size") ?? "unknown"}`,
+          `viewport=${response.headers.get("X-Clock-Viewport") ?? scopeKey}`,
         ].join(" | "),
         objectUrl: URL.createObjectURL(blob),
       };
     };
 
     const ensureCurrentMinute = async (snapshot: ClockSnapshot) => {
-      const prefetched = prefetchedStore.get(snapshot.cacheKey);
+      const requestCacheKey = getRequestCacheKey(snapshot);
+      const prefetched = prefetchedStore.get(requestCacheKey);
       if (prefetched) {
-        prefetchedStore.delete(snapshot.cacheKey);
+        prefetchedStore.delete(requestCacheKey);
         swapCurrentImage(prefetched, snapshot);
         return;
       }
@@ -244,6 +325,15 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
       void ensureCurrentMinute(latestSnapshot);
     };
 
+    const clearVisibleImage = () => {
+      revokeObjectUrl(currentObjectUrlRef.current);
+      currentObjectUrlRef.current = null;
+      currentTargetRef.current = null;
+      setDebugText("");
+      setImageUrl(null);
+      setIsGenerating(true);
+    };
+
     const prefetchUpcomingMinutes = async () => {
       const futureTargets = getFutureClockTargets(CLOCK_PREFETCH_MINUTES_AHEAD);
       prunePrefetchedMinutes();
@@ -257,7 +347,7 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
           return false;
         }
 
-        return !prefetchedStore.has(futureTarget.cacheKey);
+        return !prefetchedStore.has(getRequestCacheKey(futureTarget));
       });
 
       await Promise.allSettled(
@@ -274,12 +364,12 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
               return;
             }
 
-            if (!getRetainedTargetKeys().includes(futureTarget.cacheKey)) {
+            if (!getRetainedTargetKeys().includes(getRequestCacheKey(futureTarget))) {
               revokeFetchResult(prefetched);
               return;
             }
 
-            prefetchedStore.set(futureTarget.cacheKey, prefetched);
+            prefetchedStore.set(getRequestCacheKey(futureTarget), prefetched);
             prunePrefetchedMinutes();
           } catch (error) {
             const message = error instanceof Error ? error.message : "Clock prefetch failed.";
@@ -324,8 +414,27 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
       clearScheduledTimeouts();
       prunePrefetchedMinutes();
 
-      if (currentObjectUrlRef.current || snapshot.msUntilNextMinute <= URGENT_PREFETCH_LEAD_MS) {
+      if (
+        strictBoundarySwitch
+        || currentObjectUrlRef.current
+        || snapshot.msUntilNextMinute <= URGENT_PREFETCH_LEAD_MS
+      ) {
         primeUpcomingMinutes();
+      }
+
+      if (
+        strictBoundarySwitch
+        && currentTargetRef.current
+        && currentTargetRef.current.requestMinuteKey !== snapshot.requestMinuteKey
+      ) {
+        const prefetched = prefetchedStore.get(getRequestCacheKey(snapshot));
+
+        if (prefetched) {
+          prefetchedStore.delete(getRequestCacheKey(snapshot));
+          swapCurrentImage(prefetched, snapshot);
+        } else {
+          clearVisibleImage();
+        }
       }
 
       await ensureCurrentMinute(snapshot);
@@ -380,7 +489,7 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
         revokeFetchResult(prefetched);
       }
     };
-  }, [apiPath]);
+  }, [apiPath, strictBoundarySwitch, useViewportSizing, viewportSettings, viewportCacheKey]);
 
   return (
     <ClockShell
@@ -391,6 +500,7 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
       onImageError={() => imageRecoveryRef.current?.()}
       isGenerating={isGenerating}
       isModalOpen={isModalOpen}
+      isViewportFill={useViewportSizing}
       questionMarkColor={variantConfig.questionMarkColor}
       variant={variant}
       variantCopy={variantConfig.modalCopy}

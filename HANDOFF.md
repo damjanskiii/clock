@@ -34,6 +34,7 @@ Build `clock.damjanski.com` as a production-ready web app that shows the current
 - Implemented server-side OpenAI image generation route and rolling cache.
 - Implemented client-side minute loop, tab-title updates, and next-minute prefetch.
 - Added a separate `/update` page and `/api/update/clock` route so new work can evolve independently from the stable root experience.
+- Upgraded `/update` into a true viewport-aware sandbox: it now sends the visitor's current viewport dimensions to its own API route, uses a matching portrait/landscape/square generation shape, fills the viewport visually, and uses a yellow question mark.
 - Added `README.md`, `.env.example`, and deployment-oriented package scripts.
 - Added social metadata for `https://clock.damjanski.com/`, including share title `WHAT:TIME:IS:IT`, share copy `The DamjaskiOS Clock`, generated OG/Twitter image routes, and the requested remote favicon.
 - Configured standalone output and start command for DreamHost-friendly Node deployment.
@@ -68,9 +69,11 @@ Build `clock.damjanski.com` as a production-ready web app that shows the current
 
 ## In progress
 - Monitoring the `/update` sandbox after the first-load image hardening deploy so any remaining initial-render edge cases can be isolated without touching `/`.
+- Verifying the latest `/update` deploy with viewport-aware generation and stricter minute-boundary handoff behavior.
 
 ## Left to do
 - Build the next-version feature work inside `/update` and `/api/update/clock` instead of changing `/` directly.
+- Validate the new `/update` viewport behavior across a few real browser sizes and tune the portrait/landscape threshold if the chosen generation aspect ratio feels off.
 - Finish the Vercel validation pass by confirming the newest deployed frontend keeps auto-updating and that future-minute pre-generation is happening as expected in an active browser session.
 - Point `clock.damjanski.com` to the Vercel project once the live Vercel deployment is confirmed stable.
 - Decide whether DreamHost should later act only as DNS/domain management or whether a VPS/Dedicated migration is still desired.
@@ -113,6 +116,7 @@ Build `clock.damjanski.com` as a production-ready web app that shows the current
 ## Known issues / caveats
 - The image cache is still in-memory per server process, so separate instances do not share already-generated minute images.
 - First load for a minute may briefly show a loading or previous-image fallback while generation completes.
+- `/update` no longer keeps the previous minute visible after the browser title flips; if the prefetched next image is still not ready at the boundary, it intentionally shows the loading state instead.
 - Costs scale with traffic; the prefetch window stays conservative at 2 minutes and only runs while a visitor is active.
 - The daily budget guard is estimated from image-count pricing, not reconciled against exact billing exports from OpenAI.
 - Social metadata intentionally uses the provided share copy spelling: `The DamjaskiOS Clock`.

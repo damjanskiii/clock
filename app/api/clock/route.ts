@@ -59,7 +59,8 @@ export async function GET(request: NextRequest) {
   try {
     const image = await getMinuteImage({
       displayTime,
-      format,
+      imageSize: format === "square" ? "1024x1024" : undefined,
+      promptFormat: format,
       requestMinuteKey,
     });
     const body = new Uint8Array(image.buffer.byteLength);
@@ -75,6 +76,8 @@ export async function GET(request: NextRequest) {
         "X-Clock-Model": image.model,
         "X-Clock-Time": image.displayTime,
         "X-Clock-Generated-At": image.generatedAt,
+        "X-Clock-Prompt-Format": image.promptFormat,
+        "X-Clock-Size": image.imageSize,
       },
     });
   } catch (error) {

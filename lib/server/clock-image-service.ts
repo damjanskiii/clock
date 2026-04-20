@@ -2,6 +2,7 @@ import {
   DEFAULT_OPENAI_IMAGE_MODEL,
   DEFAULT_OPENAI_IMAGE_QUALITY,
   DEFAULT_OPENAI_IMAGE_SIZE,
+  type OpenAIImageSize,
 } from "@/lib/clock-config";
 import {
   DailyClockBudgetExceededError,
@@ -10,15 +11,15 @@ import {
 } from "@/lib/server/daily-image-budget";
 import { buildClockPrompt } from "@/lib/clock-prompt";
 import { getOpenAIClient } from "@/lib/server/openai";
-import type { ClockRequestFormat } from "@/lib/clock-time";
 
 type CachedMinuteImage = {
   buffer: Buffer;
   displayTime: string;
-  format: ClockRequestFormat;
   generatedAt: string;
+  imageSize: OpenAIImageSize;
   mimeType: string;
   model: string;
+  promptFormat: string;
   requestMinuteKey: string;
 };
 
@@ -26,13 +27,27 @@ const resolvedCache = new Map<string, CachedMinuteImage>();
 const pendingCache = new Map<string, Promise<CachedMinuteImage>>();
 
 type MinuteImageRequest = {
+  cacheNamespace?: string;
   displayTime: string;
-  format: ClockRequestFormat;
+  imageSize?: OpenAIImageSize;
+  promptFormat: string;
   requestMinuteKey: string;
 };
 
-function getCacheKey({ displayTime, format, requestMinuteKey }: MinuteImageRequest) {
-  return `${requestMinuteKey}|${displayTime}|${format}`;
+function getCacheKey({
+  cacheNamespace,
+  displayTime,
+  imageSize = DEFAULT_OPENAI_IMAGE_SIZE,
+  promptFormat,
+  requestMinuteKey,
+}: MinuteImageRequest) {
+  return [
+    cacheNamespace ?? "default",
+    requestMinuteKey,
+    displayTime,
+    promptFormat,
+    imageSize,
+  ].join("|");
 }
 
 function trimCache() {
@@ -46,8 +61,13 @@ function trimCache() {
   }
 }
 
-async function generateMinuteImage({ displayTime, format, requestMinuteKey }: MinuteImageRequest): Promise<CachedMinuteImage> {
-  const prompt = buildClockPrompt(displayTime, format);
+async function generateMinuteImage({
+  displayTime,
+  imageSize = DEFAULT_OPENAI_IMAGE_SIZE,
+  promptFormat,
+  requestMinuteKey,
+}: MinuteImageRequest): Promise<CachedMinuteImage> {
+  const prompt = buildClockPrompt(displayTime, promptFormat);
   const openai = getOpenAIClient();
   const reservation = await reserveDailyImageBudget();
 
@@ -58,7 +78,7 @@ async function generateMinuteImage({ displayTime, format, requestMinuteKey }: Mi
       model: DEFAULT_OPENAI_IMAGE_MODEL,
       prompt,
       quality: DEFAULT_OPENAI_IMAGE_QUALITY,
-      size: DEFAULT_OPENAI_IMAGE_SIZE,
+      size: imageSize,
     });
   } catch (error) {
     await releaseDailyImageBudget(reservation);
@@ -77,10 +97,11 @@ async function generateMinuteImage({ displayTime, format, requestMinuteKey }: Mi
   return {
     buffer,
     displayTime,
-    format,
     generatedAt: new Date().toISOString(),
+    imageSize,
     mimeType: "image/png",
     model: DEFAULT_OPENAI_IMAGE_MODEL,
+    promptFormat,
     requestMinuteKey,
   };
 }

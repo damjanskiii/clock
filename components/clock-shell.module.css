@@ -21,6 +21,12 @@
   place-items: center;
 }
 
+.clockFrame[data-viewport-fill="true"] {
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto;
+}
+
 .clockImage,
 .placeholder {
   width: 100%;
@@ -154,4 +160,8 @@
   .clockFrame {
     width: min(84vmin, 520px);
   }
+}
+
+.page[data-variant="v2"] .centerStage {
+  padding: 0;
 }
