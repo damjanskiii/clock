@@ -18,23 +18,24 @@ type FetchResult = {
 };
 
 type ClockAppProps = {
+  apiPath?: string;
   variant: ClockVariantId;
 };
 
 const DAILY_LIMIT_MESSAGE = "Too many people apparently don't know how late it is and are visiting this site. Hold your horses - the daily token limit has been reached. Come back tomorrow.";
 const URGENT_PREFETCH_LEAD_MS = 25_000;
 
-function buildClockRequestUrl(target: ClockTarget) {
+function buildClockRequestUrl(target: ClockTarget, apiPath: string) {
   const params = new URLSearchParams({
     format: "square",
     requestMinute: target.requestMinuteKey,
     time: target.displayTime,
   });
 
-  return `/api/clock?${params.toString()}`;
+  return `${apiPath}?${params.toString()}`;
 }
 
-export function ClockApp({ variant }: ClockAppProps) {
+export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
   const variantConfig = clockVariants[variant];
   const [debugText, setDebugText] = useState("");
   const [displayTime, setDisplayTime] = useState(() => getClockSnapshot().displayTime);
@@ -130,7 +131,7 @@ export function ClockApp({ variant }: ClockAppProps) {
     };
 
     const fetchClockImage = async (target: ClockTarget): Promise<FetchResult> => {
-      const response = await fetch(buildClockRequestUrl(target), {
+      const response = await fetch(buildClockRequestUrl(target, apiPath), {
         cache: "no-store",
       });
 
@@ -339,7 +340,7 @@ export function ClockApp({ variant }: ClockAppProps) {
         revokeFetchResult(prefetched);
       }
     };
-  }, []);
+  }, [apiPath]);
 
   return (
     <ClockShell

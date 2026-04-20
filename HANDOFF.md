@@ -5,6 +5,8 @@ Build `clock.damjanski.com` as a production-ready web app that shows the current
 
 ## Current product scope
 - V1 implemented as a visitor-local-time experience using a square generated clock image, minute-based regeneration, tab-title updates, centered black-background layout, loading state, and info modal.
+- `/` remains the stable live clock experience.
+- `/update` now exists as a separate sandbox route so future experiments can ship without changing `/`.
 - Production metadata implemented: share title/copy, OG/Twitter image, canonical URL, and external favicon.
 - Active production target moved to Vercel for now so V1 can run on a modern Node platform immediately; DreamHost shared hosting remains documented as a blocked runtime path.
 - Current V1 behavior now generates only for active visitors, pre-generates upcoming minute images up to 2 minutes ahead for active sessions, auto-swaps the displayed image without reload, keeps seconds out of prompts, uses the updated hyperrealistic prompt, and enforces an estimated $20/day generation cap.
@@ -31,6 +33,7 @@ Build `clock.damjanski.com` as a production-ready web app that shows the current
 - Implemented shared time utilities and prompt builder.
 - Implemented server-side OpenAI image generation route and rolling cache.
 - Implemented client-side minute loop, tab-title updates, and next-minute prefetch.
+- Added a separate `/update` page and `/api/update/clock` route so new work can evolve independently from the stable root experience.
 - Added `README.md`, `.env.example`, and deployment-oriented package scripts.
 - Added social metadata for `https://clock.damjanski.com/`, including share title `WHAT:TIME:IS:IT`, share copy `The DamjaskiOS Clock`, generated OG/Twitter image routes, and the requested remote favicon.
 - Configured standalone output and start command for DreamHost-friendly Node deployment.
@@ -65,6 +68,7 @@ Build `clock.damjanski.com` as a production-ready web app that shows the current
 - Deploying the latest Vercel build that includes visitor-local time generation, the hyperrealistic prompt, loading state, latest-model alias, and the daily budget guard.
 
 ## Left to do
+- Build the next-version feature work inside `/update` and `/api/update/clock` instead of changing `/` directly.
 - Finish the Vercel validation pass by confirming the newest deployed frontend keeps auto-updating and that future-minute pre-generation is happening as expected in an active browser session.
 - Point `clock.damjanski.com` to the Vercel project once the live Vercel deployment is confirmed stable.
 - Decide whether DreamHost should later act only as DNS/domain management or whether a VPS/Dedicated migration is still desired.
