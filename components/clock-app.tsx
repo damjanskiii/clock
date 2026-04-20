@@ -24,6 +24,7 @@ type ClockAppProps = {
 
 const DAILY_LIMIT_MESSAGE = "Too many people apparently don't know how late it is and are visiting this site. Hold your horses - the daily token limit has been reached. Come back tomorrow.";
 const URGENT_PREFETCH_LEAD_MS = 25_000;
+const RETIRED_OBJECT_URL_BUFFER = 4;
 
 function buildClockRequestUrl(target: ClockTarget, apiPath: string) {
   const params = new URLSearchParams({
@@ -46,6 +47,7 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
 
   const currentTargetRef = useRef<ClockTarget | null>(null);
   const currentObjectUrlRef = useRef<string | null>(null);
+  const imageRecoveryRef = useRef<(() => void) | null>(null);
   const prefetchedRef = useRef<Map<string, FetchResult>>(new Map());
   const requestCacheRef = useRef<Map<string, Promise<FetchResult>>>(new Map());
   const prefetchTaskRef = useRef<Promise<void> | null>(null);
@@ -57,6 +59,7 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
     let cancelled = false;
     const prefetchedStore = prefetchedRef.current;
     const requestCache = requestCacheRef.current;
+    const retiredObjectUrls: string[] = [];
 
     const revokeObjectUrl = (objectUrl: string | null) => {
       if (objectUrl) {
@@ -71,6 +74,19 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
         }
 
         revokeObjectUrl(result.objectUrl);
+      }
+    };
+
+    const retireObjectUrl = (objectUrl: string | null) => {
+      if (!objectUrl || objectUrl === currentObjectUrlRef.current) {
+        return;
+      }
+
+      retiredObjectUrls.push(objectUrl);
+
+      while (retiredObjectUrls.length > RETIRED_OBJECT_URL_BUFFER) {
+        const oldestObjectUrl = retiredObjectUrls.shift() ?? null;
+        revokeObjectUrl(oldestObjectUrl);
       }
     };
 
@@ -107,7 +123,10 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
     };
 
     const swapCurrentImage = (nextImage: FetchResult, target: ClockTarget) => {
-      revokeObjectUrl(currentObjectUrlRef.current);
+      if (currentObjectUrlRef.current && currentObjectUrlRef.current !== nextImage.objectUrl) {
+        retireObjectUrl(currentObjectUrlRef.current);
+      }
+
       currentObjectUrlRef.current = nextImage.objectUrl;
       currentTargetRef.current = target;
       setDebugText(nextImage.debugText);
@@ -206,6 +225,23 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
         setErrorText(message);
         setIsGenerating(false);
       }
+    };
+
+    imageRecoveryRef.current = () => {
+      const latestSnapshot = getClockSnapshot();
+      const brokenUrl = currentObjectUrlRef.current;
+
+      if (brokenUrl) {
+        revokeObjectUrl(brokenUrl);
+      }
+
+      currentObjectUrlRef.current = null;
+      currentTargetRef.current = null;
+      setImageUrl(null);
+      setErrorText(null);
+      setIsGenerating(true);
+
+      void ensureCurrentMinute(latestSnapshot);
     };
 
     const prefetchUpcomingMinutes = async () => {
@@ -327,6 +363,7 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
 
     return () => {
       cancelled = true;
+      imageRecoveryRef.current = null;
       clearScheduledTimeouts();
       const prefetchedEntries = [...prefetchedStore.values()];
       if (titleTimerRef.current) {
@@ -336,6 +373,9 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
       window.removeEventListener("blur", clearScheduledTimeouts);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       revokeObjectUrl(currentObjectUrlRef.current);
+      for (const retiredObjectUrl of retiredObjectUrls) {
+        revokeObjectUrl(retiredObjectUrl);
+      }
       for (const prefetched of prefetchedEntries) {
         revokeFetchResult(prefetched);
       }
@@ -348,6 +388,7 @@ export function ClockApp({ apiPath = "/api/clock", variant }: ClockAppProps) {
       errorText={errorText}
       imageAlt={`AI-generated clock showing ${displayTime} in your local time`}
       imageUrl={imageUrl}
+      onImageError={() => imageRecoveryRef.current?.()}
       isGenerating={isGenerating}
       isModalOpen={isModalOpen}
       questionMarkColor={variantConfig.questionMarkColor}

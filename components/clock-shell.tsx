@@ -8,6 +8,7 @@ type ClockShellProps = {
   errorText: string | null;
   imageAlt: string;
   imageUrl: string | null;
+  onImageError: () => void;
   isGenerating: boolean;
   isModalOpen: boolean;
   questionMarkColor: string;
@@ -22,6 +23,7 @@ export function ClockShell({
   errorText,
   imageAlt,
   imageUrl,
+  onImageError,
   isGenerating,
   isModalOpen,
   questionMarkColor,
@@ -46,7 +48,7 @@ export function ClockShell({
         <div className={styles.clockFrame}>
           {imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img alt={imageAlt} className={styles.clockImage} src={imageUrl} />
+            <img alt={imageAlt} className={styles.clockImage} src={imageUrl} onError={onImageError} />
           ) : (
             <div aria-hidden="true" className={styles.placeholder} />
           )}

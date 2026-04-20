@@ -61,11 +61,13 @@ Build `clock.damjanski.com` as a production-ready web app that shows the current
 - Fixed a stale-first-image race on initial load so a clock that finishes after the minute has already changed is discarded instead of flashing briefly before the correct minute.
 - Added a hidden black-on-black debug readout on the page with prompt-time metadata so the requested minute can be verified by selecting the page.
 - Added guards so prefetched image cleanup cannot revoke the blob URL of the image currently being displayed, which could otherwise cause an intermittent broken-image state until the next minute.
+- Hardened the client image swap path by keeping a short buffer of retired blob URLs instead of revoking the previous visible image immediately, and added automatic recovery if the browser reports an image render error.
+- Deployed the first-load image hardening to production so `/update` is less likely to flash a broken image icon before the first successful clock render.
 - Added an estimated `$20` daily generation limit with a visitor-facing fallback message.
 - Verified the moving alias `chatgpt-image-latest` works with the OpenAI Images API and local production env.
 
 ## In progress
-- Deploying the latest Vercel build that includes visitor-local time generation, the hyperrealistic prompt, loading state, latest-model alias, and the daily budget guard.
+- Monitoring the `/update` sandbox after the first-load image hardening deploy so any remaining initial-render edge cases can be isolated without touching `/`.
 
 ## Left to do
 - Build the next-version feature work inside `/update` and `/api/update/clock` instead of changing `/` directly.
